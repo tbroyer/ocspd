@@ -1,0 +1,28 @@
+TODO
+
+- HTTP caching: github.com/gregjones/httpcache
+- filesystem watching: https://fsnotify.org/ gopkg.in/fsnotify.v1
+
+IMPLEMENTATIONS
+
+OpenSSL:
+ - tests: https://github.com/openssl/openssl/blob/master/test/recipes/80-test_ocsp.t
+ - tests: https://github.com/openssl/openssl/tree/master/test/ocsp-tests
+
+GnuTLS:
+ - https://gitlab.com/gnutls/gnutls/blob/master/src/ocsptool-common.c
+ - https://gitlab.com/gnutls/gnutls/blob/master/src/ocsptool.c
+ - tests: https://gitlab.com/gnutls/gnutls/blob/master/tests/ocsp.c
+
+NSS:
+ - tests: https://hg.mozilla.org/projects/nss/file/tip/tests/ocsp/ocsp.sh
+
+Nginx:
+ - https://github.com/nginx/nginx/blob/master/src/event/ngx_event_openssl_stapling.c
+
+HAProxy:
+ - https://github.com/haproxy/haproxy/blob/master/src/ssl_sock.c
+
+Apache HTTPD:
+ - https://github.com/apache/httpd/blob/master/modules/ssl/ssl_util_stapling.c
+ - https://github.com/apache/httpd/blob/master/modules/ssl/ssl_engine_ocsp.c
