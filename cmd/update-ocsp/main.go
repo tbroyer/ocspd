@@ -16,12 +16,8 @@ import (
 
 func main() {
 	// TODO: validate number of arguments
-	certBundle, err := ioutil.ReadFile(os.Args[1])
-	if err != nil {
-		log.Fatal(err)
-	}
-	// TODO: fallback to .issuer file if certBundle doesn't contain the issuer cert
-	cert, issuer, err := ocspd.ParsePEMCertificateBundle(certBundle)
+	certBundleFileName := os.Args[1]
+	cert, issuer, err := ocspd.ParsePEMCertificateBundle(certBundleFileName)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -34,7 +30,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("%v: %v\n", os.Args[1], statusString(resp.Status))
+	fmt.Printf("%v: %v\n", certBundleFileName, statusString(resp.Status))
 	fmt.Printf("\tThis Update: %v\n", resp.ThisUpdate)
 	if !resp.NextUpdate.IsZero() {
 		fmt.Printf("\tNext Update: %v\n", resp.NextUpdate)
@@ -43,7 +39,7 @@ func main() {
 		fmt.Printf("\tReason: %v\n", revocationReasonString(resp.RevocationReason))
 		fmt.Printf("\tRevocation Time: %v\n", resp.RevokedAt)
 	}
-	err = ioutil.WriteFile(os.Args[1]+".ocsp", data, 0644)
+	err = ioutil.WriteFile(certBundleFileName+".ocsp", data, 0644)
 	if err != nil {
 		log.Fatal(err)
 	}
