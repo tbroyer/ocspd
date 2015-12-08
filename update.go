@@ -8,7 +8,9 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/ocsp"
 )
@@ -63,4 +65,52 @@ func ResponderURL(cert *x509.Certificate) (string, error) {
 		return ocspServer, nil
 	}
 	return "", errors.New("Cannot find an OCSP URL")
+}
+
+// NeedsRefresh determines where the given OCSP response needs to be refreshed.
+// If the response has no NextUpdate information, it needs to be refreshed.
+// Otherwise, it'll need to be refreshed halfway through its validity period,
+// and to avoid refreshing too many times during that interval the last refresh
+// time and the checks period are used as guidance.
+func NeedsRefresh(resp *ocsp.Response, mtime time.Time, period time.Duration) bool {
+	// TODO: take into account the signer certificate's NotAfter and NotBefore
+	now := time.Now()
+	if resp.NextUpdate.IsZero() || resp.NextUpdate.Before(now) {
+		return true
+	}
+	if now.Add(period).After(resp.NextUpdate) {
+		// next time we'll check the response will be expired
+		return true
+	}
+	h := resp.ThisUpdate.Add(resp.NextUpdate.Sub(resp.ThisUpdate) / 2)
+	if h.After(now) {
+		// still in the first half of the validity period
+		return false
+	}
+	if h.After(mtime) {
+		// this is the first time we check during the second half of the validity period
+		return true
+	}
+	// TODO: refresh more often during the second half of the validity period
+	return false
+}
+
+// NeedsRefreshFile applies NeedsRefresh heuristics to an OCSP response stored
+// in a file: it will check if the file exists, parse it, then call NeedsRefresh
+// with parsed OCSP response, the file's last modification time and the given period.
+func NeedsRefreshFile(filename string, issuer *x509.Certificate, period time.Duration) (bool, error) {
+	stats, err := os.Stat(filename)
+	if err != nil {
+		return true, err
+	}
+	data, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return true, err
+	}
+	resp, err := ocsp.ParseResponse(data, issuer)
+	if err != nil {
+		return true, err
+	}
+	// TODO: make check period configurable
+	return NeedsRefresh(resp, stats.ModTime(), period), nil
 }

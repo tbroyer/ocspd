@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"time"
 
 	"golang.org/x/crypto/ocsp"
 
@@ -21,7 +22,17 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	// TODO: check existing OCSP response before querying the responder
+	// check existing/cached OCSP response before querying the responder
+	ocspFileName := certBundleFileName + ".ocsp"
+	// TODO: make check period configurable
+	needsRefresh, err := ocspd.NeedsRefreshFile(ocspFileName, issuer, 24*time.Hour)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if !needsRefresh {
+		// cached response is "fresh" enough, don't refresh it
+		return
+	}
 	data, err := ocspd.Update(cert, issuer, "")
 	if err != nil {
 		log.Fatal(err)
@@ -39,7 +50,7 @@ func main() {
 		fmt.Printf("\tReason: %v\n", revocationReasonString(resp.RevocationReason))
 		fmt.Printf("\tRevocation Time: %v\n", resp.RevokedAt)
 	}
-	err = ioutil.WriteFile(certBundleFileName+".ocsp", data, 0644)
+	err = ioutil.WriteFile(ocspFileName, data, 0644)
 	if err != nil {
 		log.Fatal(err)
 	}
