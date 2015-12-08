@@ -2,3 +2,10 @@ language: go
 sudo: false
 go:
  - 1.5.2
+before_script:
+ - go get golang.org/x/tools/cmd/goimports
+ - go get golang.org/x/tools/cmd/vet
+script:
+ - goimports -l -w -d -e . && git diff --quiet --exit-code
+ - go vet ./...
+ - go test -v ./...
