@@ -9,7 +9,8 @@ func TestParsePEM(t *testing.T) {
 	for _, tt := range []string{"testdata/cert_only", "testdata/full"} {
 		cert, issuer, err := ParsePEMCertificateBundle(tt)
 		if err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			continue
 		}
 		if cert.SerialNumber.Uint64() != 4455460921000457498 {
 			t.Error("failed")
