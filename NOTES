@@ -6,6 +6,8 @@ TODO
 IMPLEMENTATIONS
 
 OpenSSL:
+ - https://github.com/openssl/openssl/blob/master/apps/ocsp.c
+ - https://github.com/openssl/openssl/tree/master/crypto/ocsp
  - tests: https://github.com/openssl/openssl/blob/master/test/recipes/80-test_ocsp.t
  - tests: https://github.com/openssl/openssl/tree/master/test/ocsp-tests
 
