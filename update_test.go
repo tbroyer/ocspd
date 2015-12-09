@@ -8,6 +8,7 @@ import (
 )
 
 func TestNeedsRefresh(t *testing.T) {
+	now := time.Now()
 	type testcase struct {
 		name     string
 		expected bool
@@ -21,62 +22,62 @@ func TestNeedsRefresh(t *testing.T) {
 			expected: true,
 			response: ocsp.Response{
 				Status:     ocsp.Good,
-				ProducedAt: time.Now().Add(-96 * time.Hour),
-				ThisUpdate: time.Now().Add(-96 * time.Hour),
+				ProducedAt: now.Add(-96 * time.Hour),
+				ThisUpdate: now.Add(-96 * time.Hour),
 			},
 		},
 		{
 			name:     "In first half of validity period",
 			expected: false,
-			mtime:    time.Now().Add(-12 * time.Hour),
+			mtime:    now.Add(-12 * time.Hour),
 			period:   12 * time.Hour,
 			response: ocsp.Response{
 				Status:     ocsp.Good,
-				ProducedAt: time.Now().Add(-24 * time.Hour),
-				ThisUpdate: time.Now().Add(-24 * time.Hour),
-				NextUpdate: time.Now().Add(72 * time.Hour),
+				ProducedAt: now.Add(-24 * time.Hour),
+				ThisUpdate: now.Add(-24 * time.Hour),
+				NextUpdate: now.Add(72 * time.Hour),
 			},
 		},
 		{
 			name:     "Response would be expired next time we'll check", // despite being in the first half of validity period
 			expected: true,
-			mtime:    time.Now().Add(-12 * time.Hour),
+			mtime:    now.Add(-12 * time.Hour),
 			period:   96 * time.Hour,
 			response: ocsp.Response{
 				Status:     ocsp.Good,
-				ProducedAt: time.Now().Add(-24 * time.Hour),
-				ThisUpdate: time.Now().Add(-24 * time.Hour),
-				NextUpdate: time.Now().Add(72 * time.Hour),
+				ProducedAt: now.Add(-24 * time.Hour),
+				ThisUpdate: now.Add(-24 * time.Hour),
+				NextUpdate: now.Add(72 * time.Hour),
 			},
 		},
 		{
 			name:     "In second half of validity period, never refreshed",
 			expected: true,
-			mtime:    time.Now().Add(-12 * time.Hour),
+			mtime:    now.Add(-12 * time.Hour),
 			period:   12 * time.Hour,
 			response: ocsp.Response{
 				Status:     ocsp.Good,
-				ProducedAt: time.Now().Add(-49 * time.Hour),
-				ThisUpdate: time.Now().Add(-49 * time.Hour),
-				NextUpdate: time.Now().Add(47 * time.Hour),
+				ProducedAt: now.Add(-49 * time.Hour),
+				ThisUpdate: now.Add(-49 * time.Hour),
+				NextUpdate: now.Add(47 * time.Hour),
 			},
 		},
 		{
 			name:     "In second half of validity period, already refreshed",
 			expected: false,
-			mtime:    time.Now().Add(-12 * time.Hour),
+			mtime:    now.Add(-12 * time.Hour),
 			period:   12 * time.Hour,
 			response: ocsp.Response{
 				Status:     ocsp.Good,
-				ProducedAt: time.Now().Add(-73 * time.Hour),
-				ThisUpdate: time.Now().Add(-73 * time.Hour),
-				NextUpdate: time.Now().Add(23 * time.Hour),
+				ProducedAt: now.Add(-73 * time.Hour),
+				ThisUpdate: now.Add(-73 * time.Hour),
+				NextUpdate: now.Add(23 * time.Hour),
 			},
 		},
 		// TODO: test with different statuses
 	}
 	for _, test := range tests {
-		if NeedsRefresh(&test.response, test.mtime, test.period) != test.expected {
+		if needsRefresh(&test.response, test.mtime, test.period, now) != test.expected {
 			var expected, actual string
 			if test.expected {
 				expected, actual = "need refresh", "didn't"

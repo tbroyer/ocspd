@@ -73,8 +73,11 @@ func ResponderURL(cert *x509.Certificate) (string, error) {
 // and to avoid refreshing too many times during that interval the last refresh
 // time and the checks period are used as guidance.
 func NeedsRefresh(resp *ocsp.Response, mtime time.Time, period time.Duration) bool {
+	return needsRefresh(resp, mtime, period, time.Now())
+}
+
+func needsRefresh(resp *ocsp.Response, mtime time.Time, period time.Duration, now time.Time) bool {
 	// TODO: take into account the signer certificate's NotAfter and NotBefore
-	now := time.Now()
 	if resp.NextUpdate.IsZero() || resp.NextUpdate.Before(now) {
 		return true
 	}
