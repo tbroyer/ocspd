@@ -4,10 +4,10 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
-	"os"
 	"time"
 
 	"golang.org/x/crypto/ocsp"
@@ -15,17 +15,19 @@ import (
 	"github.com/tbroyer/ocspd"
 )
 
+var interval = flag.Duration("interval", 24*time.Hour, "indicative interval between invocations of this tool")
+
 func main() {
+	flag.Parse()
 	// TODO: validate number of arguments
-	certBundleFileName := os.Args[1]
+	certBundleFileName := flag.Arg(0)
 	cert, issuer, err := ocspd.ParsePEMCertificateBundle(certBundleFileName)
 	if err != nil {
 		log.Fatal(err)
 	}
 	// check existing/cached OCSP response before querying the responder
 	ocspFileName := certBundleFileName + ".ocsp"
-	// TODO: make check period configurable
-	needsRefresh, err := ocspd.NeedsRefreshFile(ocspFileName, issuer, 24*time.Hour)
+	needsRefresh, err := ocspd.NeedsRefreshFile(ocspFileName, issuer, *interval)
 	if err != nil {
 		log.Fatal(err)
 	}
