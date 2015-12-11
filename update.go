@@ -3,6 +3,7 @@ package ocspd
 import (
 	"bytes"
 	"crypto/x509"
+	"encoding/base64"
 	"errors"
 	"io"
 	"io/ioutil"
@@ -33,9 +34,18 @@ func Update(cert, issuer *x509.Certificate, responderURL string) ([]byte, error)
 	if err != nil {
 		return nil, err
 	}
-	// TODO: conditionally use http.Get() if len(bytes)<255 as hinted in RFC
 	// TODO: observe HTTP cache semantics
-	resp, err := http.Post(responderURL, "application/ocsp-request", bytes.NewBuffer(req))
+	getURL := responderURL
+	if !strings.HasSuffix(getURL, "/") {
+		getURL += "/"
+	}
+	getURL += strings.Replace(url.QueryEscape(base64.StdEncoding.EncodeToString(req)), "+", "%20", -1)
+	var resp *http.Response
+	if len(getURL) <= 255 {
+		resp, err = http.Get(getURL)
+	} else {
+		resp, err = http.Post(responderURL, "application/ocsp-request", bytes.NewBuffer(req))
+	}
 	if err != nil {
 		return nil, err
 	}
