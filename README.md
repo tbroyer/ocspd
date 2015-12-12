@@ -18,7 +18,7 @@ SPECIFICATIONS
 
 ROADMAP
 
-1. command-line tool updating OCSP response for one certificate at a time,
+1. *DONE* command-line tool updating OCSP response for one certificate at a time,
    replacing `openssl ocsp` or the more complete [`hapos-upd`] script (but
    without the part that's specific to HAProxy)
 2. handle many certificates; provide a _hook_ mechanism to notify
