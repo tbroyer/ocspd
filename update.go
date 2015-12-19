@@ -56,11 +56,7 @@ func Update(cert, issuer *x509.Certificate, responderURL string) ([]byte, error)
 	if !strings.EqualFold(resp.Header.Get("Content-Type"), "application/ocsp-response") {
 		return nil, errors.New("Bad response content-type")
 	}
-	var bodyReader io.Reader = resp.Body
-	if resp.ContentLength >= 0 {
-		bodyReader = io.LimitReader(bodyReader, resp.ContentLength)
-	} // TODO: else, set a limit
-	return ioutil.ReadAll(bodyReader)
+	return ioutil.ReadAll(io.LimitReader(resp.Body, 1024*1024))
 }
 
 // ResponderURL extracts the OCSP responder URL from the given certificate.
