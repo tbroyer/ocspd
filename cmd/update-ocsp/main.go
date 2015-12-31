@@ -22,8 +22,21 @@ import (
 	"github.com/tbroyer/ocspd"
 )
 
-var interval = flag.Duration("interval", 24*time.Hour, "indicative interval between invocations of this tool")
-var hookCmd = flag.String("hook", "", "optional program to run if all goes well")
+var interval time.Duration
+var hookCmd string
+
+func init() {
+	const (
+		defaultInterval = 24 * time.Hour
+		intervalUsage   = "indicative interval between invocations of this tool"
+		hookUsage       = "optional program to run if all goes well"
+	)
+	flag.DurationVar(&interval, "interval", defaultInterval, intervalUsage)
+	flag.DurationVar(&interval, "i", defaultInterval, intervalUsage+" (shorthand)")
+
+	flag.StringVar(&hookCmd, "hook", "", hookUsage)
+	flag.StringVar(&hookCmd, "h", "", hookUsage+" (shorthand)")
+}
 
 var exitCode = 0
 
@@ -44,7 +57,7 @@ func main() {
 		}
 		// check existing/cached OCSP response before querying the responder
 		ocspFileName := certBundleFileName + ".ocsp"
-		needsRefresh, err := ocspd.NeedsRefreshFile(ocspFileName, issuer, *interval)
+		needsRefresh, err := ocspd.NeedsRefreshFile(ocspFileName, issuer, interval)
 		if err != nil {
 			log.Println(certBundleFileName, ": ", err)
 			exitCode = 1
@@ -80,8 +93,8 @@ func main() {
 			exitCode = 1
 			continue
 		}
-		if len(*hookCmd) > 0 {
-			if err = ocspd.RunHookCmd(*hookCmd, data, os.Stdout, os.Stderr); err != nil {
+		if hookCmd != "" {
+			if err = ocspd.RunHookCmd(hookCmd, data, os.Stdout, os.Stderr); err != nil {
 				log.Println(certBundleFileName, ": ", err)
 				exitCode = 1
 				continue
