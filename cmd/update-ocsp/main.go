@@ -1,6 +1,10 @@
 // update-ocsp reads all-in-one bundle files (whose names are passed as
 // command-line argument) and sends queries to the OCSP responders, storing the
 // responses in *.ocsp files next to the input files.
+// The argument can also identify a directory, in which case all files in the
+// directory (with the exception of those ending in .ocsp, .issuer, or .sctl
+// –for HAProxy compatibility–, or .key –for compatibility with almost anything
+// else, storing private keys separately–) are treated as input files.
 package main
 
 import (
@@ -9,6 +13,8 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/ocsp"
@@ -19,6 +25,8 @@ import (
 var interval = flag.Duration("interval", 24*time.Hour, "indicative interval between invocations of this tool")
 var hookCmd = flag.String("hook", "", "optional program to run if all goes well")
 
+var exitCode = 0
+
 func main() {
 	flag.Parse()
 	if flag.NArg() == 0 {
@@ -26,8 +34,8 @@ func main() {
 		flag.Usage()
 		os.Exit(2)
 	}
-	exitCode := 0
-	for _, certBundleFileName := range flag.Args() {
+	var names = fileNames()
+	for _, certBundleFileName := range names {
 		cert, issuer, err := ocspd.ParsePEMCertificateBundle(certBundleFileName)
 		if err != nil {
 			log.Println(certBundleFileName, ": ", err)
@@ -81,6 +89,55 @@ func main() {
 		}
 	}
 	os.Exit(exitCode)
+}
+
+func fileNames() (names []string) {
+	for _, arg := range flag.Args() {
+		stats, err := os.Stat(arg)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			log.Fatal(err)
+		}
+		if stats.IsDir() {
+			f, err := os.Open(arg)
+			if os.IsNotExist(err) {
+				// dir has disappeared between Stat and Open,
+				// let's do as if it never existed
+				continue
+			}
+			if err != nil {
+				log.Fatal(err)
+			}
+			ns, err := f.Readdirnames(-1)
+			f.Close()
+			if err != nil {
+				log.Fatal(err)
+			}
+			for _, n := range ns {
+				if strings.HasSuffix(n, ".issuer") || strings.HasSuffix(n, ".ocsp") || strings.HasSuffix(n, ".sctl") || strings.HasSuffix(n, ".key") {
+					continue
+				}
+				n = filepath.Join(arg, n)
+				stats, err := os.Stat(n)
+				if os.IsNotExist(err) {
+					// n has disappeared between Readdirnames and Open,
+					// let's do as if it never existed
+					continue
+				}
+				if err != nil {
+					log.Fatal(err)
+				}
+				if stats.Mode().IsRegular() {
+					names = append(names, n)
+				}
+			}
+		} else if stats.Mode().IsRegular() {
+			names = append(names, arg)
+		}
+	}
+	return
 }
 
 func statusString(status int) string {
