@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"os"
 	"time"
 
 	"golang.org/x/crypto/ocsp"
@@ -16,6 +17,7 @@ import (
 )
 
 var interval = flag.Duration("interval", 24*time.Hour, "indicative interval between invocations of this tool")
+var hookCmd = flag.String("hook", "", "optional program to run if all goes well")
 
 func main() {
 	flag.Parse()
@@ -52,9 +54,13 @@ func main() {
 		fmt.Printf("\tReason: %v\n", revocationReasonString(resp.RevocationReason))
 		fmt.Printf("\tRevocation Time: %v\n", resp.RevokedAt)
 	}
-	err = ioutil.WriteFile(ocspFileName, data, 0644)
-	if err != nil {
+	if err = ioutil.WriteFile(ocspFileName, data, 0644); err != nil {
 		log.Fatal(err)
+	}
+	if len(*hookCmd) > 0 {
+		if err = ocspd.RunHookCmd(*hookCmd, data, os.Stdout, os.Stderr); err != nil {
+			log.Fatal(err)
+		}
 	}
 }
 
