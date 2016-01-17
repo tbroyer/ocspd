@@ -5,6 +5,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"io/ioutil"
+	"os"
 )
 
 // ParsePEMCertificateBundle parses a PEM file containing the certificate chain
@@ -42,6 +43,9 @@ func ParsePEMCertificateBundle(certBundleFileName string) (cert, issuer *x509.Ce
 	// If we're here, that means we found 'cert' but not 'issuer'
 	// Try reading it from a ".issuer" file
 	data, err = ioutil.ReadFile(certBundleFileName + ".issuer")
+	if os.IsNotExist(err) {
+		return cert, nil, errors.New("No issuer certificate found")
+	}
 	if err != nil {
 		return
 	}
