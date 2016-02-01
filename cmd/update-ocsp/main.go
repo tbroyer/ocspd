@@ -20,6 +20,7 @@ import (
 	"golang.org/x/crypto/ocsp"
 
 	"github.com/tbroyer/ocspd"
+	"github.com/tbroyer/ocspd/cmd/internal"
 )
 
 var interval time.Duration
@@ -49,7 +50,7 @@ func main() {
 	}
 	var names = fileNames()
 	for _, certBundleFileName := range names {
-		cert, issuer, err := ocspd.ParsePEMCertificateBundle(certBundleFileName)
+		cert, issuer, err := internal.ParsePEMCertificateBundle(certBundleFileName)
 		if err != nil {
 			log.Println(certBundleFileName, ": ", err)
 			exitCode = 1
@@ -94,7 +95,7 @@ func main() {
 			continue
 		}
 		if hookCmd != "" {
-			if err = ocspd.RunHookCmd(hookCmd, data, os.Stdout, os.Stderr); err != nil {
+			if err = internal.RunHookCmd(hookCmd, data, os.Stdout, os.Stderr); err != nil {
 				log.Println(certBundleFileName, ": ", err)
 				exitCode = 1
 				continue

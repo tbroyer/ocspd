@@ -1,4 +1,4 @@
-package ocspd
+package internal
 
 import (
 	"reflect"
