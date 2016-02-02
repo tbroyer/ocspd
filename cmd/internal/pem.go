@@ -4,6 +4,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"os"
 )
@@ -16,6 +17,7 @@ func ParsePEMCertificateBundle(certBundleFileName string) (cert, issuer *x509.Ce
 	if err != nil {
 		return
 	}
+	var skippedBlockTypes []string
 	for len(data) > 0 {
 		var block *pem.Block
 		block, data = pem.Decode(data)
@@ -23,6 +25,7 @@ func ParsePEMCertificateBundle(certBundleFileName string) (cert, issuer *x509.Ce
 			break
 		}
 		if block.Type != "CERTIFICATE" || len(block.Headers) != 0 {
+			skippedBlockTypes = append(skippedBlockTypes, block.Type)
 			continue
 		}
 		var c *x509.Certificate
@@ -38,7 +41,11 @@ func ParsePEMCertificateBundle(certBundleFileName string) (cert, issuer *x509.Ce
 		}
 	}
 	if cert == nil {
-		return nil, nil, errors.New("No certificate found")
+		if len(skippedBlockTypes) == 0 {
+			return nil, nil, fmt.Errorf("ocspd: failed to find any PEM data in certificate file %s", certBundleFileName)
+		} else {
+			return nil, nil, fmt.Errorf("ocspd: failed to find \"CERTIFICATE\" PEM block in certificate file %s after skipping PEM blocks of the following types: %v", certBundleFileName, skippedBlockTypes)
+		}
 	}
 	// If we're here, that means we found 'cert' but not 'issuer'
 	// Try reading it from a ".issuer" file
