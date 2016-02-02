@@ -1,13 +1,9 @@
 package ocspd
 
 import (
-	"bytes"
 	"crypto/x509"
-	"encoding/base64"
 	"errors"
-	"io"
 	"io/ioutil"
-	"net/http"
 	"net/url"
 	"os"
 	"strings"
@@ -16,47 +12,19 @@ import (
 	"golang.org/x/crypto/ocsp"
 )
 
-// Update queries the OCSP responder and returns an OCSP response
+// Update queries the OCSP responder and returns an OCSP response.
+//
 // If responderURL is empty then the OCSP responder URL is extracted from the
 // passed in certificates.
 func Update(cert, issuer *x509.Certificate, responderURL string) ([]byte, error) {
-	var err error
-	if len(responderURL) == 0 {
-		responderURL, err = ResponderURL(cert)
-		if err != nil {
-			responderURL, err = ResponderURL(issuer)
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
-	req, err := ocsp.CreateRequest(cert, issuer, nil)
+	r, err := FetchForCert(cert, issuer, responderURL, "", time.Time{}, time.Time{})
 	if err != nil {
 		return nil, err
 	}
-	// TODO: observe HTTP cache semantics
-	getURL := responderURL
-	if !strings.HasSuffix(getURL, "/") {
-		getURL += "/"
+	if r == nil {
+		return nil, nil
 	}
-	getURL += strings.Replace(url.QueryEscape(base64.StdEncoding.EncodeToString(req)), "+", "%20", -1)
-	var resp *http.Response
-	if len(getURL) <= 255 {
-		resp, err = http.Get(getURL)
-	} else {
-		resp, err = http.Post(responderURL, "application/ocsp-request", bytes.NewBuffer(req))
-	}
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, errors.New("Bad HTTP status")
-	}
-	if !strings.EqualFold(resp.Header.Get("Content-Type"), "application/ocsp-response") {
-		return nil, errors.New("Bad response content-type")
-	}
-	return ioutil.ReadAll(io.LimitReader(resp.Body, 1024*1024))
+	return r.RawOCSPResponse, nil
 }
 
 // ResponderURL extracts the OCSP responder URL from the given certificate.
@@ -73,7 +41,8 @@ func ResponderURL(cert *x509.Certificate) (string, error) {
 	return "", errors.New("Cannot find an OCSP URL")
 }
 
-// NeedsRefresh determines where the given OCSP response needs to be refreshed.
+// NeedsRefresh determines whether the given OCSP response needs to be refreshed.
+//
 // If the response has no NextUpdate information, it needs to be refreshed.
 // Otherwise, it'll need to be refreshed halfway through its validity period,
 // and to avoid refreshing too many times during that interval the last refresh
@@ -107,19 +76,24 @@ func needsRefresh(resp *ocsp.Response, mtime time.Time, period time.Duration, no
 // NeedsRefreshFile applies NeedsRefresh heuristics to an OCSP response stored
 // in a file: it will check if the file exists, parse it, then call NeedsRefresh
 // with parsed OCSP response, the file's last modification time and the given period.
-func NeedsRefreshFile(filename string, issuer *x509.Certificate, period time.Duration) (bool, error) {
+func NeedsRefreshFile(filename string, issuer *x509.Certificate, period time.Duration) (bool, *Response, error) {
 	stats, err := os.Stat(filename)
 	if err != nil {
-		return true, err
+		return true, nil, err
 	}
 	data, err := ioutil.ReadFile(filename)
 	if err != nil {
-		return true, err
+		return true, nil, err
 	}
 	resp, err := ocsp.ParseResponse(data, issuer)
 	if err != nil {
-		return true, err
+		return true, nil, err
 	}
+	mtime := stats.ModTime()
 	// TODO: make check period configurable
-	return NeedsRefresh(resp, stats.ModTime(), period), nil
+	return NeedsRefresh(resp, mtime, period), &Response{
+		OCSPResponse:    resp,
+		RawOCSPResponse: data,
+		LastModified:    mtime,
+	}, nil
 }

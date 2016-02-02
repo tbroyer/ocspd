@@ -52,13 +52,19 @@ func main() {
 	for _, certBundleFileName := range names {
 		cert, issuer, err := internal.ParsePEMCertificateBundle(certBundleFileName)
 		if err != nil {
+			log.Print(certBundleFileName, ": ", err)
+			exitCode = 1
+			continue
+		}
+		req, err := ocspd.CreateRequest(cert, issuer, "")
+		if err != nil {
 			log.Println(certBundleFileName, ": ", err)
 			exitCode = 1
 			continue
 		}
 		// check existing/cached OCSP response before querying the responder
 		ocspFileName := certBundleFileName + ".ocsp"
-		needsRefresh, err := ocspd.NeedsRefreshFile(ocspFileName, issuer, interval)
+		needsRefresh, resp, err := ocspd.NeedsRefreshFile(ocspFileName, issuer, interval)
 		if err != nil {
 			log.Println(certBundleFileName, ": ", err)
 			exitCode = 1
@@ -68,34 +74,35 @@ func main() {
 			// cached response is "fresh" enough, don't refresh it
 			continue
 		}
-		data, err := ocspd.Update(cert, issuer, "")
+
+		resp, err = ocspd.FetchR(req, resp)
 		if err != nil {
 			log.Println(certBundleFileName, ": ", err)
 			exitCode = 1
 			continue
 		}
-		resp, err := ocsp.ParseResponse(data, issuer)
-		if err != nil {
-			log.Println(certBundleFileName, ": ", err)
-			exitCode = 1
+		if resp == nil {
+			// conditional GET returned 304 Not Modified, update mtime for next check
+			now := time.Now()
+			os.Chtimes(ocspFileName, now, now)
 			continue
 		}
-		fmt.Printf("%v: %v\n", certBundleFileName, statusString(resp.Status))
-		fmt.Printf("\tThis Update: %v\n", resp.ThisUpdate)
-		if !resp.NextUpdate.IsZero() {
-			fmt.Printf("\tNext Update: %v\n", resp.NextUpdate)
+		fmt.Printf("%v: %v\n", certBundleFileName, statusString(resp.OCSPResponse.Status))
+		fmt.Printf("\tThis Update: %v\n", resp.OCSPResponse.ThisUpdate)
+		if !resp.OCSPResponse.NextUpdate.IsZero() {
+			fmt.Printf("\tNext Update: %v\n", resp.OCSPResponse.NextUpdate)
 		}
-		if resp.Status == ocsp.Revoked {
-			fmt.Printf("\tReason: %v\n", revocationReasonString(resp.RevocationReason))
-			fmt.Printf("\tRevocation Time: %v\n", resp.RevokedAt)
+		if resp.OCSPResponse.Status == ocsp.Revoked {
+			fmt.Printf("\tReason: %v\n", revocationReasonString(resp.OCSPResponse.RevocationReason))
+			fmt.Printf("\tRevocation Time: %v\n", resp.OCSPResponse.RevokedAt)
 		}
-		if err = ioutil.WriteFile(ocspFileName, data, 0644); err != nil {
+		if err = ioutil.WriteFile(ocspFileName, resp.RawOCSPResponse, 0644); err != nil {
 			log.Print(certBundleFileName, ": ", err)
 			exitCode = 1
 			continue
 		}
 		if hookCmd != "" {
-			if err = internal.RunHookCmd(hookCmd, data, os.Stdout, os.Stderr); err != nil {
+			if err = internal.RunHookCmd(hookCmd, resp.RawOCSPResponse, os.Stdout, os.Stderr); err != nil {
 				log.Println(certBundleFileName, ": ", err)
 				exitCode = 1
 				continue
