@@ -1,0 +1,12 @@
+[Unit]
+Description=OCSP Prefetcher Daemon
+After=network.target
+
+[Service]
+User=haproxy
+Group=haproxy
+ExecStart=/usr/local/bin/ocspd --hook=/usr/local/bin/update-haproxy.sh /etc/haproxy/certs/
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
