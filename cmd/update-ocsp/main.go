@@ -13,11 +13,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
-	"path/filepath"
-	"strings"
 	"time"
-
-	"golang.org/x/crypto/ocsp"
 
 	"github.com/tbroyer/ocspd"
 	"github.com/tbroyer/ocspd/cmd/internal"
@@ -48,7 +44,12 @@ func main() {
 		flag.Usage()
 		os.Exit(2)
 	}
-	var names = fileNames()
+
+	names, err := internal.FileNames(flag.Args())
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	for _, certBundleFileName := range names {
 		cert, issuer, err := internal.ParsePEMCertificateBundle(certBundleFileName)
 		if err != nil {
@@ -87,15 +88,7 @@ func main() {
 			os.Chtimes(ocspFileName, now, now)
 			continue
 		}
-		fmt.Printf("%v: %v\n", certBundleFileName, statusString(resp.OCSPResponse.Status))
-		fmt.Printf("\tThis Update: %v\n", resp.OCSPResponse.ThisUpdate)
-		if !resp.OCSPResponse.NextUpdate.IsZero() {
-			fmt.Printf("\tNext Update: %v\n", resp.OCSPResponse.NextUpdate)
-		}
-		if resp.OCSPResponse.Status == ocsp.Revoked {
-			fmt.Printf("\tReason: %v\n", revocationReasonString(resp.OCSPResponse.RevocationReason))
-			fmt.Printf("\tRevocation Time: %v\n", resp.OCSPResponse.RevokedAt)
-		}
+		internal.PrintOCSPResponse(certBundleFileName, resp.OCSPResponse)
 		if err = ioutil.WriteFile(ocspFileName, resp.RawOCSPResponse, 0644); err != nil {
 			log.Print(certBundleFileName, ": ", err)
 			exitCode = 1
@@ -112,93 +105,18 @@ func main() {
 	os.Exit(exitCode)
 }
 
-func fileNames() (names []string) {
-	for _, arg := range flag.Args() {
-		stats, err := os.Stat(arg)
-		if os.IsNotExist(err) {
-			continue
-		}
-		if err != nil {
-			log.Fatal(err)
-		}
-		if stats.IsDir() {
-			f, err := os.Open(arg)
-			if os.IsNotExist(err) {
-				// dir has disappeared between Stat and Open,
-				// let's do as if it never existed
-				continue
-			}
-			if err != nil {
-				log.Fatal(err)
-			}
-			ns, err := f.Readdirnames(-1)
-			f.Close()
-			if err != nil {
-				log.Fatal(err)
-			}
-			for _, n := range ns {
-				if strings.HasSuffix(n, ".issuer") || strings.HasSuffix(n, ".ocsp") || strings.HasSuffix(n, ".sctl") || strings.HasSuffix(n, ".key") {
-					continue
-				}
-				n = filepath.Join(arg, n)
-				stats, err := os.Stat(n)
-				if os.IsNotExist(err) {
-					// n has disappeared between Readdirnames and Open,
-					// let's do as if it never existed
-					continue
-				}
-				if err != nil {
-					log.Fatal(err)
-				}
-				if stats.Mode().IsRegular() {
-					names = append(names, n)
-				}
-			}
-		} else if stats.Mode().IsRegular() {
-			names = append(names, arg)
-		}
-	}
-	return
-}
-
 func statusString(status int) string {
-	switch status {
-	case ocsp.Good:
-		return "good"
-	case ocsp.Unknown:
-		return "unknown"
-	case ocsp.Revoked:
-		return "revoked"
-	default:
+	s := internal.StatusString(status)
+	if s == "" {
 		log.Panicf("Unknown status %v", status)
-		return ""
 	}
+	return s
 }
 
 func revocationReasonString(revocationReason int) string {
-	switch revocationReason {
-	case ocsp.Unspecified:
-		return "unspecified"
-	case ocsp.KeyCompromise:
-		return "keyCompromise"
-	case ocsp.CACompromise:
-		return "cACompromise"
-	case ocsp.AffiliationChanged:
-		return "affiliationChanged"
-	case ocsp.Superseded:
-		return "superseded"
-	case ocsp.CessationOfOperation:
-		return "cessationOfOperation"
-	case ocsp.CertificateHold:
-		return "certificateHold"
-	case ocsp.RemoveFromCRL:
-		return "removeFromCRL"
-	case ocsp.PrivilegeWithdrawn:
-		return "privilegeWithdrawn"
-	case ocsp.AACompromise:
-		return "aACompromise"
-	default:
+	r := internal.RevocationReasonString(revocationReason)
+	if r == "" {
 		log.Panicf("Unknown revocation reason %v", revocationReason)
-		return ""
 	}
+	return r
 }
