@@ -11,6 +11,7 @@ import (
 	"github.com/tbroyer/ocspd"
 	"github.com/tbroyer/ocspd/cmd/internal"
 	"golang.org/x/crypto/ocsp"
+	"gopkg.in/fsnotify.v1"
 )
 
 var tickRound time.Duration
@@ -31,16 +32,28 @@ func init() {
 func main() {
 	flag.Parse()
 
-	names, err := internal.FileNames(flag.Args())
+	files, dirs, err := internal.FileNames(flag.Args())
 	if err != nil {
 		log.Fatal(err)
 	}
 
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer watcher.Close()
+
 	updater := ocspd.NewUpdater(nil)
 	updater.TickRound = tickRound
 
-	for _, file := range names {
-		if err := addOrUpdate(file, updater); err != nil {
+	for _, dir := range dirs {
+		if err := watcher.Add(dir); err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	for _, file := range files {
+		if err := addOrUpdate(file, watcher, updater); err != nil {
 			log.Fatal(err)
 		}
 	}
@@ -64,10 +77,46 @@ func main() {
 		}
 	}
 
-	updater.Start()
+	go updater.Start()
+
+	for {
+		select {
+		case ev := <-watcher.Events:
+			if ev.Op&fsnotify.Remove == fsnotify.Remove || ev.Op&fsnotify.Rename == fsnotify.Rename {
+				for _, suffix := range []string{".ocsp", ".issuer"} {
+					if strings.HasSuffix(ev.Name, suffix) {
+						log.Println(ev.Name, " removed, rescheduling")
+						addOrUpdate(strings.TrimSuffix(ev.Name, suffix), watcher, updater)
+						break
+					}
+				}
+				if !internal.ShouldIgnoreFileName(ev.Name) {
+					updater.Remove(ev.Name)
+				}
+			}
+			if ev.Op&fsnotify.Create == fsnotify.Create || ev.Op&fsnotify.Write == fsnotify.Write {
+				var certName = ev.Name
+				if strings.HasSuffix(ev.Name, ".issuer") {
+					certName = strings.TrimSuffix(ev.Name, ".issuer")
+				}
+				if internal.ShouldIgnoreFileName(certName) {
+					break
+				}
+				if !isRegularFile(ev.Name) || (certName != ev.Name && !isRegularFile(certName)) {
+					break
+				}
+				err := addOrUpdate(certName, watcher, updater)
+				if err != nil {
+					log.Println(certName, ": ", err)
+				}
+			}
+		case err := <-watcher.Errors:
+			log.Println(err)
+		}
+	}
 }
 
-func addOrUpdate(file string, updater *ocspd.Updater) error {
+func addOrUpdate(file string, watcher *fsnotify.Watcher, updater *ocspd.Updater) error {
 	updater.Remove(file)
 
 	cert, issuer, err := internal.ParsePEMCertificateBundle(file)
@@ -93,5 +142,18 @@ func addOrUpdate(file string, updater *ocspd.Updater) error {
 		return err
 	} // else: leave resp==nil
 
+	err = watcher.Add(file)
+	if err != nil {
+		return err
+	}
 	return updater.AddOrUpdate(file, req, resp)
+}
+
+func isRegularFile(f string) bool {
+	stats, err := os.Stat(f)
+	if err != nil {
+		log.Println(f, ": ", err)
+		return false
+	}
+	return stats.Mode().IsRegular()
 }

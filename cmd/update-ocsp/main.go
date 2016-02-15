@@ -45,7 +45,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	names, err := internal.FileNames(flag.Args())
+	names, _, err := internal.FileNames(flag.Args())
 	if err != nil {
 		log.Fatal(err)
 	}

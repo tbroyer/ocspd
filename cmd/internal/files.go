@@ -10,14 +10,14 @@ func ShouldIgnoreFileName(n string) bool {
 	return strings.HasSuffix(n, ".issuer") || strings.HasSuffix(n, ".ocsp") || strings.HasSuffix(n, ".sctl") || strings.HasSuffix(n, ".key")
 }
 
-func FileNames(args []string) (names []string, err error) {
+func FileNames(args []string) (files []string, dirs []string, err error) {
 	for _, arg := range args {
 		stats, err := os.Stat(arg)
 		if err != nil {
 			if os.IsNotExist(err) {
 				continue
 			}
-			return names, err
+			return files, dirs, err
 		}
 		if stats.IsDir() {
 			f, err := os.Open(arg)
@@ -27,12 +27,13 @@ func FileNames(args []string) (names []string, err error) {
 					// let's do as if it never existed
 					continue
 				}
-				return names, err
+				return files, dirs, err
 			}
+			dirs = append(dirs, arg)
 			ns, err := f.Readdirnames(-1)
 			f.Close()
 			if err != nil {
-				return names, err
+				return files, dirs, err
 			}
 			for _, n := range ns {
 				if ShouldIgnoreFileName(n) {
@@ -46,15 +47,15 @@ func FileNames(args []string) (names []string, err error) {
 						// let's do as if it never existed
 						continue
 					}
-					return names, err
+					return files, dirs, err
 				}
 				if stats.Mode().IsRegular() {
-					names = append(names, n)
+					files = append(files, n)
 				}
 			}
 		} else if stats.Mode().IsRegular() {
-			names = append(names, arg)
+			files = append(files, arg)
 		}
 	}
-	return names, nil
+	return files, dirs, nil
 }
