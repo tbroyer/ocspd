@@ -36,32 +36,33 @@ func main() {
 		log.Fatal(err)
 	}
 
-	updater := ocspd.NewUpdater(nil)
-	updater.TickRound = tickRound
-	updater.Log = log.Printf
+	updater := &ocspd.Updater{
+		TickRound: tickRound,
+		Log:       log.Printf,
+
+		OnUpdate: func(ev ocspd.Event) {
+			tags := strings.Join(ev.Tags, ", ")
+			internal.PrintOCSPResponse(tags, ev.Response)
+			for _, f := range ev.Tags {
+				ocspFilename := f + ".ocsp"
+				if err := ioutil.WriteFile(ocspFilename, ev.RawResponse, 0644); err != nil {
+					log.Println(f, ": ", err)
+					break
+				}
+				// "store" ThisUpdate as file's mtime as a hint for next daemon restart
+				_ = os.Chtimes(ocspFilename, ev.Response.ThisUpdate, ev.Response.ThisUpdate)
+			}
+			if hookCmd != "" {
+				if err := internal.RunHookCmd(hookCmd, ev.RawResponse, os.Stdout, os.Stderr); err != nil {
+					log.Println(tags, ": ", err)
+				}
+			}
+		},
+	}
 
 	for _, file := range names {
 		if err := addOrUpdate(file, updater); err != nil {
 			log.Fatal(err)
-		}
-	}
-
-	updater.OnUpdate = func(ev ocspd.Event) {
-		tags := strings.Join(ev.Tags, ", ")
-		internal.PrintOCSPResponse(tags, ev.Response)
-		for _, f := range ev.Tags {
-			ocspFilename := f + ".ocsp"
-			if err := ioutil.WriteFile(ocspFilename, ev.RawResponse, 0644); err != nil {
-				log.Println(f, ": ", err)
-				break
-			}
-			// "store" ThisUpdate as file's mtime as a hint for next daemon restart
-			_ = os.Chtimes(ocspFilename, ev.Response.ThisUpdate, ev.Response.ThisUpdate)
-		}
-		if hookCmd != "" {
-			if err := internal.RunHookCmd(hookCmd, ev.RawResponse, os.Stdout, os.Stderr); err != nil {
-				log.Println(tags, ": ", err)
-			}
 		}
 	}
 

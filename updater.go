@@ -5,7 +5,6 @@ import (
 	"errors"
 	"math"
 	"math/rand"
-	"net/http"
 	"sort"
 	"strings"
 	"sync"
@@ -59,8 +58,8 @@ type Updater struct {
 	OnUpdate  func(Event)
 	TickRound time.Duration
 	Log       func(format string, v ...interface{})
+	Fetcher   *Fetcher
 
-	fetcher     *Fetcher
 	mu          sync.Mutex
 	statuses    ocspStatuses
 	tagToStatus map[string]*ocspStatus
@@ -68,21 +67,6 @@ type Updater struct {
 	done        chan struct{}
 
 	rand func(time.Duration) time.Duration
-}
-
-// NewUpdater creates a new Updater.
-func NewUpdater(client *http.Client) *Updater {
-	updater := &Updater{
-		TickRound: DefaultTickRound,
-		Log:       func(format string, v ...interface{}) {},
-		fetcher: &Fetcher{
-			Client: client,
-		},
-		tagToStatus: make(map[string]*ocspStatus),
-		done:        make(chan struct{}),
-		rand:        defaultRand,
-	}
-	return updater
 }
 
 func defaultRand(d time.Duration) time.Duration {
@@ -143,6 +127,9 @@ func (u *Updater) AddOrUpdate(tag string, req *Request, resp *Response) error {
 			u.updateStatus(s, resp)
 			u.statuses = append(u.statuses, s)
 		}
+		if u.tagToStatus == nil {
+			u.tagToStatus = make(map[string]*ocspStatus)
+		}
 		u.tagToStatus[tag] = s
 	}
 	u.resetTimer()
@@ -178,7 +165,7 @@ func (u *Updater) Remove(tag string) {
 				}
 			}
 		}
-		u.Log("%s no longer monitored\n", tag)
+		u.log("%s no longer monitored\n", tag)
 		u.resetTimer()
 	}
 }
@@ -210,6 +197,7 @@ func (u *Updater) startTimer() bool {
 		return false
 	}
 	u.timer = time.NewTimer(math.MaxInt64)
+	u.done = make(chan struct{})
 	u.resetTimer()
 	return true
 }
@@ -230,6 +218,8 @@ func (u *Updater) Stop() {
 	u.timer.Stop()
 	u.timer = nil
 	u.done <- struct{}{}
+	close(u.done)
+	u.done = nil
 }
 
 func (u *Updater) resetTimer() {
@@ -241,7 +231,7 @@ func (u *Updater) resetTimer() {
 		return
 	}
 	sort.Sort(u.statuses)
-	d := u.statuses[0].NextUpdate.Sub(u.fetcher.now())
+	d := u.statuses[0].NextUpdate.Sub(u.Fetcher.now())
 	u.timer.Reset(d)
 }
 
@@ -251,23 +241,23 @@ func (u *Updater) UpdateNow() {
 	defer u.mu.Unlock()
 
 	for _, s := range u.statuses {
-		if s.NextUpdate.After(u.fetcher.now()) {
+		if s.NextUpdate.After(u.Fetcher.now()) {
 			break
 		}
 		tags := strings.Join(s.Tags, ", ")
-		u.Log("Fetching OCSP response for %s\n", tags)
-		r, err := u.fetcher.FetchR(s.Request, s.Response)
+		u.log("Fetching OCSP response for %s\n", tags)
+		r, err := u.Fetcher.FetchR(s.Request, s.Response)
 		if err != nil {
-			u.Log("Error while fetching OCSP response for %s: %s\n", tags, err.Error())
+			u.log("Error while fetching OCSP response for %s: %s\n", tags, err.Error())
 			// retry asap
 			// TODO: exponential backoff
 			// TODO: skip other requests with same ResponderURL
-			s.NextUpdate = s.NextUpdate.Add(u.TickRound)
+			s.NextUpdate = s.NextUpdate.Add(u.tickRound())
 		} else {
 			if r == nil {
-				u.Log("Fetched OCSP response for %s: up-to-date.\n", tags)
+				u.log("Fetched OCSP response for %s: up-to-date.\n", tags)
 			} else {
-				u.Log("Fetched OCSP response for %s\n", tags)
+				u.log("Fetched OCSP response for %s\n", tags)
 			}
 			u.updateStatus(s, r)
 			if r != nil {
@@ -291,23 +281,40 @@ func (u *Updater) updateStatus(s *ocspStatus, r *Response) {
 	}
 	if !maxAge.IsZero() && (resp == nil || maxAge.Before(resp.NextUpdate)) {
 		s.NextUpdate = maxAge
-		u.Log("Update of %s scheduled at %v\n", strings.Join(s.Tags, ","), s.NextUpdate)
+		u.log("Update of %s scheduled at %v\n", strings.Join(s.Tags, ","), s.NextUpdate)
 	} else if resp != nil {
-		now := u.fetcher.now()
+		now := u.Fetcher.now()
 		if resp.NextUpdate.Before(now) {
 			// update asap
 			s.NextUpdate = time.Time{}
-			u.Log("Update of %s scheduled asap\n", strings.Join(s.Tags, ","))
+			u.log("Update of %s scheduled asap\n", strings.Join(s.Tags, ","))
 		} else {
-			earliest := now.Add(u.TickRound)
+			earliest := now.Add(u.tickRound())
 			h := resp.NextUpdate.Sub(earliest) / 2
-			s.NextUpdate = earliest.Add(h + u.rand(h)).Truncate(u.TickRound)
-			u.Log("Update of %s scheduled at %v\n", strings.Join(s.Tags, ","), s.NextUpdate)
+			r := u.rand
+			if r == nil {
+				r = defaultRand
+			}
+			s.NextUpdate = earliest.Add(h + r(h)).Truncate(u.TickRound)
+			u.log("Update of %s scheduled at %v\n", strings.Join(s.Tags, ","), s.NextUpdate)
 		}
 	} else if s.Response == nil {
 		// update asap
 		s.NextUpdate = time.Time{}
-		u.Log("Update of %s scheduled asap\n", strings.Join(s.Tags, ","))
+		u.log("Update of %s scheduled asap\n", strings.Join(s.Tags, ","))
+	}
+}
+
+func (u *Updater) tickRound() time.Duration {
+	if u.TickRound > 0 {
+		return u.TickRound
+	}
+	return DefaultTickRound
+}
+
+func (u *Updater) log(format string, v ...interface{}) {
+	if u.Log != nil {
+		u.Log(format, v...)
 	}
 }
 
