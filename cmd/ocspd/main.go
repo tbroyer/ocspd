@@ -38,6 +38,7 @@ func main() {
 
 	updater := ocspd.NewUpdater(nil)
 	updater.TickRound = tickRound
+	updater.Log = log.Printf
 
 	for _, file := range names {
 		if err := addOrUpdate(file, updater); err != nil {

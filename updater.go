@@ -3,11 +3,9 @@ package ocspd
 import (
 	"bytes"
 	"errors"
-	"log"
 	"math"
 	"math/rand"
 	"net/http"
-	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -19,8 +17,6 @@ import (
 const DefaultTickRound = 5 * time.Minute
 
 var ErrDuplicateTag = errors.New("ocspd: duplicate tag")
-
-var defaultLogger = log.New(os.Stderr, "", log.LstdFlags)
 
 type Event struct {
 	Response    *ocsp.Response
@@ -62,7 +58,7 @@ func (s ocspStatuses) Less(i, j int) bool { return s[i].NextUpdate.Before(s[j].N
 type Updater struct {
 	OnUpdate  func(Event)
 	TickRound time.Duration
-	Logger    *log.Logger
+	Log       func(format string, v ...interface{})
 
 	fetcher     *Fetcher
 	mu          sync.Mutex
@@ -78,7 +74,7 @@ type Updater struct {
 func NewUpdater(client *http.Client) *Updater {
 	updater := &Updater{
 		TickRound: DefaultTickRound,
-		Logger:    defaultLogger,
+		Log:       func(format string, v ...interface{}) {},
 		fetcher: &Fetcher{
 			Client: client,
 		},
@@ -182,7 +178,7 @@ func (u *Updater) Remove(tag string) {
 				}
 			}
 		}
-		u.Logger.Printf("%s no longer monitored\n", tag)
+		u.Log("%s no longer monitored\n", tag)
 		u.resetTimer()
 	}
 }
@@ -259,19 +255,19 @@ func (u *Updater) UpdateNow() {
 			break
 		}
 		tags := strings.Join(s.Tags, ", ")
-		u.Logger.Printf("Fetching OCSP response for %s\n", tags)
+		u.Log("Fetching OCSP response for %s\n", tags)
 		r, err := u.fetcher.FetchR(s.Request, s.Response)
 		if err != nil {
-			u.Logger.Printf("Error while fetching OCSP response for %s: %s\n", tags, err.Error())
+			u.Log("Error while fetching OCSP response for %s: %s\n", tags, err.Error())
 			// retry asap
 			// TODO: exponential backoff
 			// TODO: skip other requests with same ResponderURL
 			s.NextUpdate = s.NextUpdate.Add(u.TickRound)
 		} else {
 			if r == nil {
-				u.Logger.Printf("Fetched OCSP response for %s: up-to-date.\n", tags)
+				u.Log("Fetched OCSP response for %s: up-to-date.\n", tags)
 			} else {
-				u.Logger.Printf("Fetched OCSP response for %s\n", tags)
+				u.Log("Fetched OCSP response for %s\n", tags)
 			}
 			u.updateStatus(s, r)
 			if r != nil {
@@ -295,23 +291,23 @@ func (u *Updater) updateStatus(s *ocspStatus, r *Response) {
 	}
 	if !maxAge.IsZero() && (resp == nil || maxAge.Before(resp.NextUpdate)) {
 		s.NextUpdate = maxAge
-		u.Logger.Printf("Update of %s scheduled at %v\n", strings.Join(s.Tags, ","), s.NextUpdate)
+		u.Log("Update of %s scheduled at %v\n", strings.Join(s.Tags, ","), s.NextUpdate)
 	} else if resp != nil {
 		now := u.fetcher.now()
 		if resp.NextUpdate.Before(now) {
 			// update asap
 			s.NextUpdate = time.Time{}
-			u.Logger.Printf("Update of %s scheduled asap\n", strings.Join(s.Tags, ","))
+			u.Log("Update of %s scheduled asap\n", strings.Join(s.Tags, ","))
 		} else {
 			earliest := now.Add(u.TickRound)
 			h := resp.NextUpdate.Sub(earliest) / 2
 			s.NextUpdate = earliest.Add(h + u.rand(h)).Truncate(u.TickRound)
-			u.Logger.Printf("Update of %s scheduled at %v\n", strings.Join(s.Tags, ","), s.NextUpdate)
+			u.Log("Update of %s scheduled at %v\n", strings.Join(s.Tags, ","), s.NextUpdate)
 		}
 	} else if s.Response == nil {
 		// update asap
 		s.NextUpdate = time.Time{}
-		u.Logger.Printf("Update of %s scheduled asap\n", strings.Join(s.Tags, ","))
+		u.Log("Update of %s scheduled asap\n", strings.Join(s.Tags, ","))
 	}
 }
 
