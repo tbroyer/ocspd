@@ -16,15 +16,21 @@ SPECIFICATIONS
 - https://tools.ietf.org/html/rfc6960
 - https://tools.ietf.org/html/rfc5019
 
-ROADMAP
+FEATURES
 
-1. *DONE* command-line tool updating OCSP response for one certificate at a time,
-   replacing `openssl ocsp` or the more complete [`hapos-upd`] script (but
-   without the part that's specific to HAProxy)
-2. handle many certificates; provide a _hook_ mechanism to notify
-   applications through external programs (e.g. update HAProxy through the
-   `set ssl ocsp-response` Unix Socket command)
-3. long-lived program deciding when OCSP responses need to be refreshed,
-   eliminating the need for a Cron job
+1. `update-ocsp`: command-line tool updating OCSP responses for a set of
+   certificates, replacing `openssl ocsp` or the more complete [`hapos-upd`]
+   script (but without the part that's specific to HAProxy)
+2. `ocspd`: long-lived program deciding when OCSP responses need to be
+   refreshed, eliminating the need for a Cron job
+3. both provide a _hook_ mechanism to notify applications through external
+   programs (e.g. update HAProxy through the `set ssl ocsp-response` Unix
+   Socket command); an `update-haproxy.sh` script is provided for HAProxy.
 
  [`hapos-upd`]: https://github.com/pierky/haproxy-ocsp-stapling-updater/blob/master/hapos-upd
+
+ROADMAP
+
+1. cleanup and iron out the library API
+2. easy integration with `"crypto/tls".Config.GetCertificate` and
+   `golang.org/x/crypto/acme/autocert`
